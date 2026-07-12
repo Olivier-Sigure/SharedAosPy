@@ -89,6 +89,10 @@ cover_body = ParagraphStyle(
     "cover_body", fontName="Times-Roman", fontSize=10.5, leading=15,
     textColor=PARCHMENT_2, alignment=TA_LEFT, spaceBefore=8,
 )
+cover_note = ParagraphStyle(
+    "cover_note", fontName="Times-Italic", fontSize=9.5, leading=13.5,
+    textColor=GOLD_BRIGHT, alignment=TA_LEFT,
+)
 section_title = ParagraphStyle(
     "section_title", fontName="OldEnglish", fontSize=24, leading=28,
     textColor=NIGHT_BLUE, alignment=TA_LEFT, spaceAfter=2,
@@ -297,6 +301,29 @@ story.append(Paragraph(
     "sans troncature.",
     cover_body,
 ))
+
+note_table = Table(
+    [[Paragraph(
+        "<b>Précision méthodologique</b> — ces résultats ne proviennent ni d'un jet de dé unique, ni d'une "
+        "moyenne empirique sur des combats simulés. Chaque duel est résolu par le calcul exact de "
+        "l'espérance mathématique du dégât (probabilité de touche × blessure × sauvegarde/ward, en tenant "
+        "compte des critiques), de façon entièrement déterministe : rejouer un même duel donne toujours "
+        "rigoureusement le même résultat, sans variance ni tirage aléatoire.",
+        cover_note,
+    )]],
+    colWidths=[233*mm],
+)
+note_table.setStyle(TableStyle([
+    ("BOX", (0, 0), (-1, -1), 0.8, GOLD),
+    ("BACKGROUND", (0, 0), (-1, -1), NIGHT_BLUE),
+    ("LEFTPADDING", (0, 0), (-1, -1), 8),
+    ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+    ("TOPPADDING", (0, 0), (-1, -1), 6),
+    ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+]))
+story.append(Spacer(1, 6*mm))
+story.append(note_table)
+
 story.append(NextPageTemplate("Data"))
 story.append(SectionMarker(doc, SCENARIO_1_TITLE))
 story.append(PageBreak())
