@@ -1,11 +1,12 @@
 """Charte graphique partagée par les registres PDF « TM » (mise en page inspirée
 d'Age of Sigmar). Factorise ce qui était dupliqué à l'identique entre les
-modules cost_*/best_*/combat_* : palette, styles de paragraphe, décors de page,
-badge d'alliance et gabarit de tableau classé/médaillé."""
-from datetime import datetime
+modules cost_*/best_*/combat_* : styles de paragraphe, décors de page, badge
+d'alliance et gabarit de tableau classé/médaillé. La palette de couleurs elle-
+même vient de `..pdf_theme` (partagée avec `tournament_kit/pdf_builder.py`,
+réexportée ici pour ne pas casser les imports existants `from .common import ...`)."""
+from pathlib import Path
 
 from reportlab.lib import colors
-from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import mm
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
@@ -13,20 +14,11 @@ from reportlab.platypus import (
     BaseDocTemplate, PageTemplate, Frame, Table, TableStyle, Flowable, Paragraph,
 )
 
-OLD_ENGLISH_FONT = "Times-Bold"
-
-PAGE_W, PAGE_H = landscape(A4)
-
-INK_BLACK    = colors.HexColor("#0b0d13")
-NIGHT_BLUE   = colors.HexColor("#161a2b")
-GOLD         = colors.HexColor("#b8912f")
-GOLD_BRIGHT  = colors.HexColor("#f0cf6b")
-GOLD_DIM     = colors.HexColor("#8a6d24")
-PARCHMENT    = colors.HexColor("#f3ead6")
-PARCHMENT_2  = colors.HexColor("#e9dcc0")
-STEEL        = colors.HexColor("#4a4536")
-BLOOD_GREEN  = colors.HexColor("#2f6b32")
-BLOOD_RED    = colors.HexColor("#8c1f1f")
+from ..pdf_theme import (
+    OLD_ENGLISH_FONT, PAGE_W, PAGE_H,
+    INK_BLACK, NIGHT_BLUE, GOLD, GOLD_BRIGHT, GOLD_DIM, PARCHMENT, PARCHMENT_2, STEEL,
+    BLOOD_GREEN, BLOOD_RED, today_str,
+)
 
 ALLIANCE_BG = {
     "Order":       colors.HexColor("#1c3f6e"),
@@ -177,8 +169,11 @@ def make_draw_data_bg(band_text: str):
 def build_document(out_path: str, title: str, band_text: str, author: str = "TM") -> BaseDocTemplate:
     """Crée le BaseDocTemplate avec les deux gabarits de page (Cover / Data)
     communs aux registres. `band_text` est le libellé fixe du bandeau (ex.
-    « AGE OF SIGMAR · ... · ÉD. TM »)."""
-    doc = BaseDocTemplate(out_path, pagesize=landscape(A4), title=title, author=author)
+    « AGE OF SIGMAR · ... · ÉD. TM »). Crée le dossier parent de `out_path`
+    s'il n'existe pas encore (ex. `scratch/output/best_unit/`, pas garanti
+    présent) — `BaseDocTemplate` ne le fait pas lui-même."""
+    Path(out_path).parent.mkdir(parents=True, exist_ok=True)
+    doc = BaseDocTemplate(out_path, pagesize=(PAGE_W, PAGE_H), title=title, author=author)
     doc.section_title = ""
     cover_frame = Frame(24 * mm, 24 * mm, PAGE_W - 48 * mm, PAGE_H - 48 * mm, id="cover")
     data_frame = Frame(MARGIN, BOTTOM_MARGIN, PAGE_W - 2 * MARGIN, PAGE_H - TOP_MARGIN - BOTTOM_MARGIN, id="data")
@@ -187,10 +182,6 @@ def build_document(out_path: str, title: str, band_text: str, author: str = "TM"
         PageTemplate(id="Data", frames=[data_frame], onPage=make_draw_data_bg(band_text)),
     ])
     return doc
-
-
-def today_str() -> str:
-    return datetime.now().strftime("%d/%m/%Y à %Hh%M")
 
 
 # ----------------------------------------------------------------------------
