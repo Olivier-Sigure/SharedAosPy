@@ -1,5 +1,5 @@
 """Décline le « Panthéon des Champions » (best_heros.py/best_unites.py) par
-faction : un PDF par armée dans `scratch/output/<armée>/`, mêlant héros et
+faction : un PDF par armée dans `scratch/output/best_unit/<armée>/`, mêlant héros et
 unités de troupe dans un seul classement trié par score combiné — les deux
 registres partagent la même formule de score (mêmes poids ROI_WEIGHT/
 IMBALANCE_WEIGHT/IMPACT_WEIGHT, cf. best_heros.py/best_unites.py), seul le
@@ -16,7 +16,7 @@ import os
 from reportlab.lib.units import mm
 from reportlab.platypus import Paragraph, Spacer, NextPageTemplate, PageBreak
 
-from . import best_heros, best_unites
+from . import best_report
 from .common import (
     build_document, ranked_table, SectionMarker, today_str,
     alliance_badge, BLOOD_GREEN, BLOOD_RED,
@@ -97,7 +97,7 @@ def render(joined: list[dict], out_path: str, *, faction: str, universe_heroes: 
         "(écart entre coût réel et coût prédit), joints par identifiant interne. Le modèle de coût est "
         "ajusté séparément sur les héros et sur les unités de troupe — voir <i>Panthéon des Champions — "
         "Héros</i>/<i>Unités</i> (registres globaux) pour le détail complet de chaque régression. Les "
-        f"profils dont la prédiction de coût est trop faible (&lt; {best_heros.MIN_PREDICTED:.0f} pts — un "
+        f"profils dont la prédiction de coût est trop faible (&lt; {best_report.MIN_PREDICTED:.0f} pts — un "
         "dénominateur proche de zéro rendrait le résidu relatif peu fiable) sont écartés, comme dans les "
         "registres de coût eux-mêmes.",
         body_text,
@@ -150,9 +150,9 @@ def render(joined: list[dict], out_path: str, *, faction: str, universe_heroes: 
         "commune aux deux registres croisés), pour les rendre comparables malgré des échelles différentes "
         "(pourcentage de ROI, pourcentage de résidu, points nets bruts) — héros et unités de troupe "
         "utilisent ensuite exactement la même formule de pondération, ce qui permet de les mêler dans ce "
-        f"classement unique. Le score = moyenne pondérée (ROI Moyen ×{best_heros.ROI_WEIGHT:.0f}, "
+        f"classement unique. Le score = moyenne pondérée (ROI Moyen ×{best_report.ROI_WEIGHT:.0f}, "
         "sous-cotation ×1, impact absolu ×1) de ces trois z-scores, <i>moins</i> un terme de pénalité "
-        f"(poids {best_heros.IMBALANCE_WEIGHT:.1f}) proportionnel à leur semi-déviation pondérée <i>vers le "
+        f"(poids {best_report.IMBALANCE_WEIGHT:.1f}) proportionnel à leur semi-déviation pondérée <i>vers le "
         "bas</i> — seules les composantes en dessous de la moyenne pondérée comptent dans la pénalité, à la "
         "façon d'un ratio de Sortino. Sans ce terme, la moyenne serait pleinement compensatoire : un excès "
         "sur un seul axe — par exemple une très forte sous-cotation — pourrait à lui seul propulser en tête "
@@ -185,7 +185,7 @@ def _write_by_faction(hero_ranked: list[dict], unit_ranked: list[dict]) -> None:
     factions = {r["army"] for r in hero_ranked} | {r["army"] for r in unit_ranked}
     for faction in factions:
         joined = _combined_for_faction(hero_ranked, unit_ranked, faction)
-        out_dir = os.path.join("scratch", "output", faction)
+        out_dir = os.path.join("scratch", "output", "best_unit", faction)
         os.makedirs(out_dir, exist_ok=True)
         render(
             joined, os.path.join(out_dir, OUT_FILENAME), faction=faction,
@@ -193,4 +193,4 @@ def _write_by_faction(hero_ranked: list[dict], unit_ranked: list[dict]) -> None:
         )
 
 
-_write_by_faction(best_heros.compute_ranked(), best_unites.compute_ranked())
+_write_by_faction(best_report.compute_ranked(is_hero=True), best_report.compute_ranked(is_hero=False))

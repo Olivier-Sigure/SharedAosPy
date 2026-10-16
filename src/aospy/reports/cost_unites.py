@@ -6,76 +6,15 @@ modèle : une régression unique évite de dupliquer les facteurs communs
 (armée, armement, type…) dans deux régressions séparées — voir
 `cost_heros.py` pour le comparatif de R² qui a motivé
 l'abandon de `fit_segmented` (deux régressions indépendantes) pour ce plan
-factoriel unique."""
-from reportlab.lib.units import mm
-from reportlab.platypus import Paragraph, Spacer, NextPageTemplate, PageBreak
+factoriel unique. Mécanique (ajustement, mise en page) partagée avec
+cost_heros.py via cost_report.py — ce fichier ne porte que le texte propre
+aux unités de troupe."""
+from .cost_report import build
 
-from ..persistence import db, repository
-from ..analysis import cost_model
-from .common import (
-    build_document, ranked_table, SectionMarker, today_str,
-    alliance_badge, BLOOD_GREEN, BLOOD_RED,
-    cover_title, cover_subtitle, cover_meta, cover_body, section_title, section_note, subhead,
-)
-from .cost_common import coef_table
-
-MIN_PREDICTED = 40.0
-OUT_PATH = "scratch/output/AoS_unites_prix_TM.pdf"
+OUT_PATH = "scratch/output/best_unit/AoS_unites_prix_TM.pdf"
 BAND_TEXT = "AGE OF SIGMAR  ·  UNITÉS SOUS-COTÉES  ·  ÉD. TM"
 
-con = db.connect()
-frame = cost_model.feature_frame(con)
-result = cost_model.fit_cost_model_factorial(con, frame=frame.copy())
-troupe_ids = set(frame.loc[~frame["is_hero"], "unit_id"])
-pool = [r for r in result.residuals if r.predicted >= MIN_PREDICTED and r.unit_id in troupe_ids]
-undercosted = sorted(pool, key=lambda r: r.residual_pct)
-armies = {a.id: a for a in repository.list_armies(con)}
-con.close()
-
-HEADER = ["#", "Unité", "Armée", "All.", "Pts réels", "Pts prédits", "Résidu", "Résidu %"]
-COL_WIDTHS = [w * mm for w in (10, 65, 48, 18, 22, 24, 22, 22)]
-
-
-def alliance_of(r):
-    army = armies.get(r.army_id)
-    return army.grand_alliance if army else "Order"
-
-
-def fmt_row(rank, r):
-    army = armies.get(r.army_id)
-    return [
-        str(rank),
-        r.name,
-        army.name if army else "?",
-        alliance_badge(alliance_of(r)),
-        str(r.points),
-        f"{r.predicted:.1f}",
-        f"{r.residual:+.1f}",
-        f"{r.residual_pct:+.0f}%",
-    ]
-
-
-def resid_color(r):
-    # résidu négatif = sous-coté = bonne affaire (vert) ; positif = sur-coté (rouge)
-    return BLOOD_GREEN if r.residual < 0 else BLOOD_RED
-
-
-doc = build_document(OUT_PATH, "Age of Sigmar — Unités les plus sous-cotées (TM)", BAND_TEXT)
-
-SECTION_TITLE_COEF = "Coefficients du Modèle — Unités"
-SECTION_TITLE = "Registre des Anomalies de Coût — Unités"
-
-story = []
-story.append(Spacer(1, 12 * mm))
-story.append(Paragraph("Registre des Anomalies de Coût", cover_title))
-story.append(Paragraph(
-    f"Unités de troupe — les {len(undercosted)} unités classées par écart au coût — édition TM",
-    cover_subtitle,
-))
-story.append(Spacer(1, 6 * mm))
-story.append(Paragraph(f"Registre établi le {today_str()} — Édition TM", cover_meta))
-story.append(Spacer(1, 6 * mm))
-story.append(Paragraph(
+METHOD_BODY_HTML = (
     "<b>Méthode :</b> régression linéaire (OLS) des points sur un plan d'expérience factoriel — "
     "variables continues (taille d'unité et son carré, dégât à distance vs aucune save, dégât perçant vs save 2+ "
     "et son carré, bonus de dégât de charge, PV effectifs [PV totaux "
@@ -102,42 +41,37 @@ story.append(Paragraph(
     "que les unités de troupe, mais le tableau de coefficients page suivante est celui du modèle "
     "unique — identique à celui du registre <i>Anomalies de Coût — Héros</i>. Base BattleScribe "
     "(<i>aospy import bsdata --all</i>), plus à jour actuellement que la source Wahapedia. "
-    f"R = {result.r_squared**0.5:.3f}, R² = {result.r_squared:.3f}, "
-    f"R² ajusté = {result.adj_r_squared:.3f}, n = {result.n_obs} unités (héros + troupes).<br/><br/>"
+    "R = {r:.3f}, R² = {r2:.3f}, "
+    "R² ajusté = {adj_r2:.3f}, n = {n} unités (héros + troupes).<br/><br/>"
     "<b>Résidu</b> = points réels − points prédits par le modèle. Un résidu négatif signifie que "
     "l'unité coûte <i>moins</i> que ce que son profil de combat justifierait — une sous-cotation, donc "
     "une bonne affaire en points ; un résidu positif signifie l'inverse (sur-cotation). Le classement "
     "ci-après trie sur le résidu <i>relatif</i> (résidu / prédiction), pour comparer équitablement des "
     "unités de gammes de points différentes ; les unités dont la prédiction est trop faible "
-    f"(&lt; {MIN_PREDICTED:.0f} pts, dénominateur peu fiable) sont écartées.<br/><br/>"
-    "Le détail des coefficients est donné page suivante.",
-    cover_body,
-))
-
-story.append(NextPageTemplate("Data"))
-story.append(SectionMarker(doc, SECTION_TITLE_COEF))
-story.append(PageBreak())
-story.append(Paragraph(SECTION_TITLE_COEF, section_title))
-story.append(Paragraph(
+    "(&lt; {min_predicted:.0f} pts, dénominateur peu fiable) sont écartées.<br/><br/>"
+    "Le détail des coefficients est donné page suivante."
+)
+COEF_NOTE_HTML = (
     "Points par unité de caractéristique, ceteris paribus ; les facteurs catégoriels sont exprimés par "
-    "rapport à une modalité de référence.",
-    section_note,
-))
-story.append(Spacer(1, 2 * mm))
-story.append(coef_table(result))
-
-story.append(SectionMarker(doc, SECTION_TITLE))
-story.append(PageBreak())
-story.append(Paragraph(SECTION_TITLE, section_title))
-story.append(Paragraph(
+    "rapport à une modalité de référence."
+)
+TABLE_NOTE_HTML = (
     "Toutes les unités de troupe, triées par résidu relatif croissant (le plus négatif en tête, les "
-    "meilleures affaires en points) jusqu'au plus sur-coté en fin de tableau.",
-    section_note,
-))
-story.append(Paragraph(f"{len(undercosted)} unités.", subhead))
-story.append(Spacer(1, 2))
-story.append(ranked_table(HEADER, COL_WIDTHS, undercosted, fmt_row, alliance_of,
-                          colored_cols=[(6, resid_color), (7, resid_color)], font_size=8))
+    "meilleures affaires en points) jusqu'au plus sur-coté en fin de tableau."
+)
 
-doc.build(story)
-print("PDF genere:", OUT_PATH)
+if __name__ == "__main__":
+    build(
+        is_hero=False,
+        label="Unité",
+        out_path=OUT_PATH,
+        band_text=BAND_TEXT,
+        cover_title_suffix="Unités les plus sous-cotées",
+        cover_subtitle_template="Unités de troupe — les {n} unités classées par écart au coût — édition TM",
+        section_title_coef="Coefficients du Modèle — Unités",
+        section_title="Registre des Anomalies de Coût — Unités",
+        method_body_html=METHOD_BODY_HTML,
+        coef_note_html=COEF_NOTE_HTML,
+        table_note_html=TABLE_NOTE_HTML,
+        table_count_template="{n} unités.",
+    )

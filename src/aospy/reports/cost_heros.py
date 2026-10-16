@@ -3,75 +3,15 @@ d'expérience factoriel ajusté sur TOUTE la population (héros + troupes,
 `cost_model.fit_cost_model_factorial`) avec des termes d'interaction
 `C(is_hero):...`. Pendant de cost_unites.py, qui utilise le même
 modèle — voir sa docstring pour la justification de ce choix face à deux
-régressions séparées (`fit_segmented`)."""
-from reportlab.lib.units import mm
-from reportlab.platypus import Paragraph, Spacer, NextPageTemplate, PageBreak
+régressions séparées (`fit_segmented`). Mécanique (ajustement, mise en page)
+partagée avec cost_unites.py via cost_report.py — ce fichier ne porte que le
+texte propre aux héros."""
+from .cost_report import build
 
-from ..persistence import db, repository
-from ..analysis import cost_model
-from .common import (
-    build_document, ranked_table, SectionMarker, today_str,
-    alliance_badge, BLOOD_GREEN, BLOOD_RED,
-    cover_title, cover_subtitle, cover_meta, cover_body, section_title, section_note, subhead,
-)
-from .cost_common import coef_table
-
-MIN_PREDICTED = 40.0
-OUT_PATH = "scratch/output/AoS_heros_prix_TM.pdf"
+OUT_PATH = "scratch/output/best_unit/AoS_heros_prix_TM.pdf"
 BAND_TEXT = "AGE OF SIGMAR  ·  HÉROS SOUS-COTÉS  ·  ÉD. TM"
 
-con = db.connect()
-frame = cost_model.feature_frame(con)
-result = cost_model.fit_cost_model_factorial(con, frame=frame.copy())
-hero_ids = set(frame.loc[frame["is_hero"], "unit_id"])
-pool = [r for r in result.residuals if r.predicted >= MIN_PREDICTED and r.unit_id in hero_ids]
-undercosted = sorted(pool, key=lambda r: r.residual_pct)
-armies = {a.id: a for a in repository.list_armies(con)}
-con.close()
-
-HEADER = ["#", "Héros", "Armée", "All.", "Pts réels", "Pts prédits", "Résidu", "Résidu %"]
-COL_WIDTHS = [w * mm for w in (10, 65, 48, 18, 22, 24, 22, 22)]
-
-
-def alliance_of(r):
-    army = armies.get(r.army_id)
-    return army.grand_alliance if army else "Order"
-
-
-def fmt_row(rank, r):
-    army = armies.get(r.army_id)
-    return [
-        str(rank),
-        r.name,
-        army.name if army else "?",
-        alliance_badge(alliance_of(r)),
-        str(r.points),
-        f"{r.predicted:.1f}",
-        f"{r.residual:+.1f}",
-        f"{r.residual_pct:+.0f}%",
-    ]
-
-
-def resid_color(r):
-    return BLOOD_GREEN if r.residual < 0 else BLOOD_RED
-
-
-doc = build_document(OUT_PATH, "Age of Sigmar — Héros les plus sous-cotés (TM)", BAND_TEXT)
-
-SECTION_TITLE_COEF = "Coefficients du Modèle — Héros"
-SECTION_TITLE = "Registre des Anomalies de Coût — Héros"
-
-story = []
-story.append(Spacer(1, 12 * mm))
-story.append(Paragraph("Registre des Anomalies de Coût", cover_title))
-story.append(Paragraph(
-    f"Héros — les {len(undercosted)} héros classés par écart au coût — édition TM",
-    cover_subtitle,
-))
-story.append(Spacer(1, 6 * mm))
-story.append(Paragraph(f"Registre établi le {today_str()} — Édition TM", cover_meta))
-story.append(Spacer(1, 6 * mm))
-story.append(Paragraph(
+METHOD_BODY_HTML = (
     "<b>Méthode :</b> régression linéaire (OLS) des points sur un plan d'expérience factoriel — "
     "variables continues (taille d'unité et son carré, dégât à distance vs aucune save, dégât perçant vs save 2+ "
     "et son carré, bonus de dégât de charge, PV effectifs [PV totaux "
@@ -98,8 +38,8 @@ story.append(Paragraph(
     "présente donc que les héros, mais le tableau de coefficients page suivante est celui du modèle "
     "unique — identique à celui du registre <i>Anomalies de Coût — Unités</i>. Base BattleScribe "
     "(<i>aospy import bsdata --all</i>), plus à jour actuellement que la source Wahapedia. "
-    f"R = {result.r_squared**0.5:.3f}, R² = {result.r_squared:.3f}, "
-    f"R² ajusté = {result.adj_r_squared:.3f}, n = {result.n_obs} unités (héros + troupes).<br/><br/>"
+    "R = {r:.3f}, R² = {r2:.3f}, "
+    "R² ajusté = {adj_r2:.3f}, n = {n} unités (héros + troupes).<br/><br/>"
     "<b>Prudence :</b> certaines armées comptent très peu de héros importés — leur coefficient d'armée "
     "a alors un fort effet de levier et est moins fiable que celui d'une faction bien peuplée en "
     "héros.<br/><br/>"
@@ -108,37 +48,32 @@ story.append(Paragraph(
     "une bonne affaire en points ; un résidu positif signifie l'inverse (sur-cotation). Le classement "
     "ci-après trie sur le résidu <i>relatif</i> (résidu / prédiction), pour comparer équitablement des "
     "héros de gammes de points différentes ; les héros dont la prédiction est trop faible "
-    f"(&lt; {MIN_PREDICTED:.0f} pts, dénominateur peu fiable) sont écartés.<br/><br/>"
-    "Le détail des coefficients est donné page suivante.",
-    cover_body,
-))
-
-story.append(NextPageTemplate("Data"))
-story.append(SectionMarker(doc, SECTION_TITLE_COEF))
-story.append(PageBreak())
-story.append(Paragraph(SECTION_TITLE_COEF, section_title))
-story.append(Paragraph(
+    "(&lt; {min_predicted:.0f} pts, dénominateur peu fiable) sont écartés.<br/><br/>"
+    "Le détail des coefficients est donné page suivante."
+)
+COEF_NOTE_HTML = (
     "Points par unité de caractéristique, ceteris paribus ; les facteurs catégoriels sont exprimés par "
     "rapport à une modalité de référence. « Rôle : Héros » est le supplément de base pour un héros "
     "(toutes autres caractéristiques égales) ; « Héros × PV effectifs » module, en plus, le prix de la "
-    "durabilité spécifiquement pour les héros.",
-    section_note,
-))
-story.append(Spacer(1, 2 * mm))
-story.append(coef_table(result))
-
-story.append(SectionMarker(doc, SECTION_TITLE))
-story.append(PageBreak())
-story.append(Paragraph(SECTION_TITLE, section_title))
-story.append(Paragraph(
+    "durabilité spécifiquement pour les héros."
+)
+TABLE_NOTE_HTML = (
     "Tous les héros, triés par résidu relatif croissant (le plus négatif en tête, les meilleures "
-    "affaires en points) jusqu'au plus sur-coté en fin de tableau.",
-    section_note,
-))
-story.append(Paragraph(f"{len(undercosted)} héros.", subhead))
-story.append(Spacer(1, 2))
-story.append(ranked_table(HEADER, COL_WIDTHS, undercosted, fmt_row, alliance_of,
-                          colored_cols=[(6, resid_color), (7, resid_color)], font_size=8))
+    "affaires en points) jusqu'au plus sur-coté en fin de tableau."
+)
 
-doc.build(story)
-print("PDF genere:", OUT_PATH)
+if __name__ == "__main__":
+    build(
+        is_hero=True,
+        label="Héros",
+        out_path=OUT_PATH,
+        band_text=BAND_TEXT,
+        cover_title_suffix="Héros les plus sous-cotées",
+        cover_subtitle_template="Héros — les {n} héros classés par écart au coût — édition TM",
+        section_title_coef="Coefficients du Modèle — Héros",
+        section_title="Registre des Anomalies de Coût — Héros",
+        method_body_html=METHOD_BODY_HTML,
+        coef_note_html=COEF_NOTE_HTML,
+        table_note_html=TABLE_NOTE_HTML,
+        table_count_template="{n} héros.",
+    )
